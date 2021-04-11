@@ -1,0 +1,39 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <script src="https://ajax.googleapis.com/ajax/libs/jquery/3.5.1/jquery.min.js"></script>
+    <title>ESP32 proxy status</title>
+</head>
+<body>
+    <h1><u>Quick view stats</u></h1>
+    <p>Active clients: <span id="clientcount"></span></p>
+    <p>Camera reachable: <span id="reachable"></span></p>
+</body>
+
+<script>
+    function refresh(){
+        $.getJSON('http://84.86.201.59:6969/api/status', function(data){
+            var client_number = document.getElementById('clientcount');
+            client_number.innerHTML = data['clientNumber'];
+        });
+    }
+
+    window.setInterval(refresh, 1000);
+    refresh();
+</script>
+
+<style>
+    body {
+        background-color: rgb(39, 39, 39);
+        font-family: sans-serif;
+        color: white;
+        margin-top: 50px;
+        margin-left: 80px;
+        font-size: 1.5em;
+    }
+</style>
+
+</html>

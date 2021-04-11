@@ -1,0 +1,24 @@
+{
+    "server" : {
+        "ip" : "192.168.2.11",
+        "port" : 6969
+    },
+    
+    "cameras" : {
+        "camera1" : {
+            "ip" : "192.168.2.19",
+            "stream_port" : 81,
+            "location" : "Birdhouse"
+        },
+        "camera2" : {
+            "ip" : "192.168.2.20",
+            "stream_port" : 81,
+            "location" : "Bathroom"
+        }
+    },
+
+    "resources" : {
+        "webpages" : "C:/Users/svenk/Documents/Python/esp32 scripts/server", 
+        "images" : "PATH"
+    }
+}
