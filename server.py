@@ -1,69 +1,188 @@
+from os import path
+from Camera import Camera
+import threading
 import socket
 import time
-import threading
-import re
+import urllib.parse as ul
 import json
-from os import path
 
-# Add path to the extra modules just in case python can't find
-#path.join(0, '/var/www/html/camera_server')
+class Server:
 
-# Local libraries
-import main_handlers
-import api_handlers
+    default_static_folder = "static/"
+    default_config_folder = "config/"
 
-# Load the setup info from the config.json file
-config_file = "C:/Users/svenk/Documents/Python/esp32 scripts/server/config.json"
-with open(config_file, 'r') as config:
-    setup = json.load(config)
+    # Constructor for server class
+    def __init__(self, config_folder = default_config_folder, static_folder = default_static_folder):
+        # Set static and config folder. Unspecified leads to default location
+        self.static_folder = static_folder
+        self.config_folder = config_folder
 
-esp_address = {}
-for camera in setup['cameras']:
-    esp_address[camera] = (setup['cameras'][camera]['ip'], setup["cameras"]["camera1"]["stream_port"])
+        # Dict of defined cameras
+        self.cameras = {}
 
-# Start up the server socket and bind it to the correct address
-server = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-#server.bind((setup["server"]["ip"], setup["server"]["port"]))
-server.bind(('0.0.0.0', setup["server"]["port"]))
-server.listen(5)
-server.settimeout(0.1)
+        # Other important operation variables
+        self.running = True
 
-start_time = time.time()
+    # Method to start the esPy32 server
+    def run(self):
+        # Load camera config file
+        with open(path.join(self.config_folder, "cameras.json"), 'r') as config:
+            self.camera_config = json.load(config)
 
-# The main server loop
-# Keep server alive while the running control variable is set to True
-while main_handlers.running:
-    # Wait for a client for the set timeout
-    # If no client connects, just pass to the rest of the server loop
-    try:
-        client_socket, client_address = server.accept()
-    except:
-        pass
-    else:
-        # If client connected, dispatch a thread to handle the client
-        client_thread = threading.Thread(target=main_handlers.client_handler, args=[client_socket], daemon=True)
-        client_thread.start()
+        # Load server config file
+        with open(path.join(self.config_folder, "server.json"), 'r') as config:
+            self.server_config = json.load(config)
 
-    # Loop over all cameras in the config file
-    for camera in setup['cameras']:
-        # Check for camera if there are people requesting a stream. If so and no ESP-connection is active, start ESP thread
-        if (len(main_handlers.stream_clients[camera]) > 0) and (main_handlers.cameras_active[camera] == False):
-            main_handlers.cameras_active[camera] = True
+        # Create camera objects
+        for camera in self.camera_config:
+            ip = self.camera_config[camera]["ip"]
+            port = self.camera_config[camera]["stream_port"]
+            location = self.camera_config[camera]["location"]
+            description = self.camera_config[camera]["description"]
+            self.cameras[camera] = Camera(ip, port, location, description)
 
-            esp_thread = threading.Thread(target=main_handlers.esp_handler, args=[esp_address[camera], camera])
-            esp_thread.daemon=True
-            esp_thread.start()
+        # Get server info from config
+        server_address = (self.server_config["ip"], self.server_config["port"])
+        server_description = self.server_config["description"]
 
-        # If there are no active clients requesting a stream, but there is still a connection to the ESP32, break the connection
-        elif (len(main_handlers.stream_clients[camera]) == 0) and (main_handlers.cameras_active[camera] == True):
-            main_handlers.cameras_active[camera] = False
+        # Initialise server socket
+        server = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        server.bind(server_address)
+        server.listen(5)
+        server.settimeout(0.1)
+
+        # Enter main server loop
+        while self.running:
+            # wait timeout time for new client, if not enter rest of main loop
+            try:
+                client_socket, client_address = server.accept()
+            except:
+                pass
+            else:
+                client_thread = threading.Thread(target=self.client_handler, args=[client_socket], daemon=True)
+                client_thread.start()
+
+            # Loop over all initialised cameras
+            for camera in self.cameras:
+                # Start camera if necessary
+                if (len(self.cameras[camera].stream_clients) > 0) and (self.cameras[camera].active == False):
+                    self.cameras[camera].request_stream()
+                    
+                # Stop camera if necessary
+                elif (len(self.cameras[camera].stream_clients) == 0) and (self.cameras[camera].active == True):
+                    self.cameras[camera].disconnect()
+
+                # Yeet all inactive/dead threads
+                self.cameras[camera].stream_clients = [client for client in self.cameras[camera].stream_clients if client.is_alive()]
+
+        time.sleep(0.05)
+
+
+    # ========================================================================================
+    # HANDLERS
+    # ========================================================================================
     
-        # Update the list of active stream clients
-        main_handlers.stream_clients[camera] = [client for client in main_handlers.stream_clients[camera] if client.is_alive()]
+    # Method to run when a new request comes in to dispatch the correct specialised handler
+    def client_handler(self, client):
+        req = client.recv(1024)
 
-    time.sleep(0.05)
+        # Remove the GET part of the request
+        req_get = re.search(b'GET ', req)
+        req = req[req_get.end():]
+        
+        # Find the location of the end of the URL
+        end_of_url = re.search(b' ', req)
+        req = req[:end_of_url.start()]
+        # Turn bytes into string for the url parser
+        url = req.decode(encoding='ascii')
 
-# Always close the server, or face the problems
-main_handlers.cameras_active = False
-print("Server closed")
-server.close()
+        # Parse the URL
+        # Returns the following (ordered): scheme (0), netloc (1), path (2), params (3), query (4), fragment (5)
+        url_parsed = ul.urlparse(url)
+
+        # Send the status page
+        if url_parsed[2] == "/status":
+            status_thread = threading.Thread(target=self.status_handler, args=[client], daemon=True)
+            status_thread.start()
+
+        # Shut the server down
+        elif url_parsed[2] == "/shutdown/imadmin":
+            shutdown_thread = threading.Thread(target=self.shutdown_handler, args=[client], daemon=True)
+            shutdown_thread.start()
+            
+        # Send the stream from a certain camera
+        # Camera is defined in the querystring, using "cam=<camera>"
+        elif url_parsed[2] == "/stream":
+            # Check if a camera has been specified in the url
+            if url_parsed[4]:
+                print("camera requested")
+                # Extract the name of the camera
+                camera = url_parsed[4]
+                var_name = re.search('cam=', camera)
+                camera = camera[var_name.end():]
+
+                # If the requested camera is initialised, start a stream thread
+                if camera in self.cameras:
+                    print("camera exists")
+                    stream_thread = threading.Thread(target=self.stream_handler, args=[client], daemon=True)
+                    stream_thread.start()
+                    # Add stream thread to clients list of camera object
+                    self.cameras[camera].stream_clients.append(stream_thread)
+                # If the requested camera is not initialised or does not exist, send error response
+                else:
+                    print("camera does not exist")
+                    request_thread = threading.Thread(target=self.bad_request_handler, args=[client], daemon=True)
+                    request_thread.start()
+            # If no camera has been specified, send error response
+            else:
+                print("no camera specified")
+                request_thread = threading.Thread(target=self.bad_request_handler, args=[client], daemon=True)
+                request_thread.start()
+        
+        # Send the last captured image of the camera specified in the querystring, using "cam=<camera>"
+        elif url_parsed[2] == "/capture":
+            # Extract the name of the camera
+            camera = url_parsed[4]
+            var_name = re.search('cam=', camera)
+            camera = query[var_name.end():]
+
+            capture_thread = threading.Thread(target=self.capture_handler, args=[client], daemon=True)
+            capture_thread.start()
+        
+        '''
+        # Send the server status information as a json response to the client
+        elif url_parsed[2] == "/api/status":
+            api_thread = threading.Thread(target=api_handlers.status_json, args=[client], daemon=True)
+            api_thread.start()
+        '''
+       
+        # If none of the above registered URLs works, the requested function has not yet been implemented or does not exist
+        # Send back a 404 page
+        else:
+            request_thread = threading.Thread(target=self.bad_request_handler, args=[client], daemon=True)
+            request_thread.start()
+    
+    # Method that sends the stream from a specific camera to the client
+    def stream_handler(self, client):
+
+        pass
+
+    # Method to send a single image to the client
+    def capture_handler(self, client):
+
+        pass
+
+    # Method to remotely shut the server down
+    def shutdown_handler(self, client):
+
+        pass
+
+    # Method to send the status page to the client
+    def status_handler(self, client):
+
+        pass
+
+    # Method to send a bad request response to the client. Used when no other handler is appropriate
+    def bad_request_handler(self, client):
+
+        pass

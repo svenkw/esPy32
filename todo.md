@@ -14,3 +14,6 @@ Each camera specified in the `config.json` file in the config folder should be t
 
 #### Split `config.json` into separate files for server and camera configuration
 Now, all configuration is in one single file. This is not ideal, especially if the esPy32 server has to work together with another webserver. All should be neatly organised in a clear folder structure anyways now.
+
+#### Add useful messages to the `bad_request_handler`
+Now the user just gets a 404, maybe a message with the exact problem would be nice...
