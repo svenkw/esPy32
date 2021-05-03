@@ -8,12 +8,26 @@ import json
 import re
 
 class Server:
-
+    '''
+    The main class of the esPy32 package. Objects of this class are servers that can manage images and streams from multiple ESP32 CAM modules to multiple clients.
+    '''
     default_static_folder = "static"
     default_config_folder = "config"
 
     # Constructor for server class
     def __init__(self, config_folder = default_config_folder, static_folder = default_static_folder):
+        '''
+        The constructor of the Server class. It simply creates the object and initialises some variables
+
+        params
+        ------
+        config_folder : string or path
+            the path to the folder containing the config json files. Defaults to a folder called config in the same directory as the Server class file.
+
+        returns
+        -------
+        None
+        '''
         # Set static and config folder. Unspecified leads to default location
         self.static_folder = path.join(getcwd(), static_folder)
         self.config_folder = path.join(getcwd(), config_folder)
@@ -26,6 +40,17 @@ class Server:
 
     # Method to start the esPy32 server
     def run(self):
+        '''
+        Method to start the server. It will start an endless loop, so keep this in mind when embedding in larger projects.
+
+        params
+        ------
+        None
+
+        returns
+        -------
+        None
+        '''
         # Load camera config file
         with open(path.join(self.config_folder, "cameras.json"), 'r') as config:
             self.camera_config = json.load(config)
@@ -88,6 +113,18 @@ class Server:
     
     # Method to run when a new request comes in to dispatch the correct specialised handler
     def client_handler(self, client):
+        '''
+        The main handler of the server. It decides what subhandler should be started, depending on the request received.
+
+        params
+        ------
+        client : socket
+            the socket object of the client that sent the request
+
+        returns
+        -------
+        None
+        '''
         req = client.recv(1024)
 
         # Remove the GET part of the request
@@ -168,6 +205,20 @@ class Server:
     
     # Method that sends the stream from a specific camera to the client
     def stream_handler(self, client, camera):
+        '''
+        The handler that sends the buffered images, received from the camera, the the client.
+
+        params
+        ------
+        client : socket
+            The socket object of the client that should receive the image stream
+        camera : Camera
+            The camera object (see Camera class) of the camera whose stream should be sent to the client.
+
+        returns
+        -------
+        None
+        '''
         res_newline = '\r\n'
         res_ok_code = 'HTTP/1.1 200 OK\r\n'
         res_content_jpeg = 'content-type: image/jpeg\r\n'
@@ -202,6 +253,20 @@ class Server:
 
     # Method to send a single image to the client
     def capture_handler(self, client, camera):
+        '''
+        Handler to send the last received image to the client, instead of a video stream. 
+
+        params
+        ------
+        client : socket
+            The socket object of the client that should receive the image
+        camera : Camera
+            The camera object (see Camera class) of the camera whose image should be sent to the client
+
+        returns
+        -------
+        None
+        '''
         res_newline = '\r\n'
         res_ok_code = 'HTTP/1.1 200 OK\r\n'
         res_content_jpeg = 'content-type: image/jpeg\r\n'
@@ -254,12 +319,36 @@ class Server:
 
     # Method to remotely shut the server down
     def shutdown_handler(self, client):
+        '''
+        Method to shut the server down
+
+        params
+        ------
+        client : socket
+            The socket object of the client that wants to close the server
+
+        returns
+        -------
+        None
+        '''
         print("Server shutting down...")
         self.running = False
         client.close()
     
     # Method to send a bad request response to the client. Used when no other handler is appropriate
     def bad_request_handler(self, client):
+        '''
+        Method to send a 404 page to the user. The default when a request could not be handled by the server.
+
+        params
+        ------
+        client : socket
+            Socket object of the client that should receive the 404 page
+
+        returns
+        -------
+        None
+        '''
         res_newline = '\r\n'
         res_ok_code = 'HTTP/1.1 200 OK\r\n'
         res_content_html = 'content-type: text/html\r\n'

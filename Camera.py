@@ -2,9 +2,30 @@ import socket
 import re
 
 class Camera:
+    '''
+    Objects of this class represent the ESP32 CAM modules that are connected to the server. They have their own address, image buffer and status variables to make camera management easier. Their properties are defined in the cameras.json config file.
+    '''
 
     # Contructor for Camera class
     def __init__(self, address, port, location, description):
+        '''
+        Constructor method of the Camera class. 
+
+        params
+        ------
+        address : string
+            The ip address of the camera. Note that this needs to be the address that the server can use to reach the camera
+        port : int
+            The port on which the server can reach the camera
+        location : string
+            A descriptive string of the location of the camera. Does not have any function for this server
+        description : string
+            A descriptive string with other information about the camera. Does not have any function for this server.
+
+        returns
+        -------
+        None
+        '''
         # Basic information about the camera
         self.address = address
         self.port = port
@@ -22,6 +43,17 @@ class Camera:
 
     # Method to connect to the ESP32 CAM and request stream
     def request_stream(self):
+        '''
+        Handler to request a stream from the camera, and update the image buffer every time a full image has been received.
+
+        params
+        ------
+        None
+
+        returns
+        -------
+        None
+        '''
         self.active = True
         
         # Connect to the streaming port
@@ -64,4 +96,15 @@ class Camera:
 
     # Method to disconnect from ESP32 CAM
     def disconnect(self):
+        '''
+        Handler that is called to disconnect from the ESP32 CAM module. This is so it stops sending the stream, preserving energy.
+
+        params
+        ------
+        None
+
+        returns
+        -------
+        None
+        '''
         self.active = False
