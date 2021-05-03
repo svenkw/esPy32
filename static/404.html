@@ -7,19 +7,12 @@
 </head>
 <body>
     <h1><u>404 page not found</u></h1>
-    <p>The page you are looking for could not be found</p>
+    <p>The page you are looking for could not be found, or you entered an invalid URL.</p>
     <p>
         The server currently supports the following commands:
         <ul>
-            <li><a href="/stream">/stream</a></li>
-            <li><a href="/capture">/capture</a></li>
-            <li>/status, only with admin privileges</li>
-        </ul>
-    </p>
-    <p>
-        Using /api, the following additional commands are available:
-        <ul>
-            <li>/status, return a json with information about the current server status</li>
+            <li><b>/stream?cam=[CAMERA]</b>: This requests a stream, where [CAMERA] is the name of the camera you want to get the video from. The camera names are specified in the cameras.json config file.</li>
+            <li><b>/capture?cam=[CAMERA]</b>: This requests the last image captured by the camera specified with [CAMERA]. The camera names are specified in the cameras.json config file. </li>
         </ul>
     </p>
 </body>
@@ -27,8 +20,9 @@
 <style>
     body {
         font-family: sans-serif;
-        font-size: 1.2em;
+        font-size: 1em;
         margin-left: 50px;
+        width: 70%;
     }
 </style>
 

@@ -1,4 +1,7 @@
-from esPy32 import esPy32
+# goal: import esPy32
+# server = esPy32.Server()
 
-server = esPy32()
-print(server.static_folder)
+from Server import Server
+
+server = Server()
+server.run()

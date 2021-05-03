@@ -1,21 +1,22 @@
-from os import path
+from os import path, getcwd
 from Camera import Camera
 import threading
 import socket
 import time
 import urllib.parse as ul
 import json
+import re
 
 class Server:
 
-    default_static_folder = "static/"
-    default_config_folder = "config/"
+    default_static_folder = "static"
+    default_config_folder = "config"
 
     # Constructor for server class
     def __init__(self, config_folder = default_config_folder, static_folder = default_static_folder):
         # Set static and config folder. Unspecified leads to default location
-        self.static_folder = static_folder
-        self.config_folder = config_folder
+        self.static_folder = path.join(getcwd(), static_folder)
+        self.config_folder = path.join(getcwd(), config_folder)
 
         # Dict of defined cameras
         self.cameras = {}
@@ -50,6 +51,7 @@ class Server:
         server.bind(server_address)
         server.listen(5)
         server.settimeout(0.1)
+        print(f"server running on ({server_address[0]}, {server_address[1]})")
 
         # Enter main server loop
         while self.running:
@@ -148,14 +150,6 @@ class Server:
 
             capture_thread = threading.Thread(target=self.capture_handler, args=[client], daemon=True)
             capture_thread.start()
-        
-        '''
-        # Send the server status information as a json response to the client
-        elif url_parsed[2] == "/api/status":
-            api_thread = threading.Thread(target=api_handlers.status_json, args=[client], daemon=True)
-            api_thread.start()
-        '''
-       
         # If none of the above registered URLs works, the requested function has not yet been implemented or does not exist
         # Send back a 404 page
         else:
@@ -174,8 +168,9 @@ class Server:
 
     # Method to remotely shut the server down
     def shutdown_handler(self, client):
-
-        pass
+        print("Server shutting down...")
+        self.running = False
+        client.close()
 
     # Method to send the status page to the client
     def status_handler(self, client):
@@ -184,5 +179,23 @@ class Server:
 
     # Method to send a bad request response to the client. Used when no other handler is appropriate
     def bad_request_handler(self, client):
+        res_newline = '\r\n'
+        res_ok_code = 'HTTP/1.1 200 OK\r\n'
+        res_content_html = 'content-type: text/html\r\n'
 
-        pass
+        with open(path.join(self.static_folder, "404.html")) as f:
+            page_data = f.read()
+        page_data = bytes(page_data, encoding='ascii')
+
+        res_content_length = f'content-length: {str(len(page_data))}' + '\r\n'
+        response = res_ok_code + res_content_html + res_content_length + res_newline
+        response = bytes(response, encoding='ascii')
+        response += page_data
+
+        client.setblocking(False)
+        time.sleep(0.01)
+        try:
+            client.send(response)
+        except:
+            pass
+        client.close()

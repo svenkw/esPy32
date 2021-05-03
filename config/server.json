@@ -1,5 +1,5 @@
 {    
-    "ip" : "0.0.0.0",
+    "ip" : "localhost",
     "port" : 6969, 
     "description" : "Main server for managing stream connections to ESP32 CAM modules"
 }
