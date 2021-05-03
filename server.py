@@ -68,10 +68,12 @@ class Server:
             for camera in self.cameras:
                 # Start camera if necessary
                 if (len(self.cameras[camera].stream_clients) > 0) and (self.cameras[camera].active == False):
+                    print(f"{camera} is now active")
                     self.cameras[camera].request_stream()
                     
                 # Stop camera if necessary
                 elif (len(self.cameras[camera].stream_clients) == 0) and (self.cameras[camera].active == True):
+                    print(f"{camera} is no longer active")
                     self.cameras[camera].disconnect()
 
                 # Yeet all inactive/dead threads
@@ -117,7 +119,6 @@ class Server:
         elif url_parsed[2] == "/stream":
             # Check if a camera has been specified in the url
             if url_parsed[4]:
-                print("camera requested")
                 # Extract the name of the camera
                 camera = url_parsed[4]
                 var_name = re.search('cam=', camera)
@@ -125,14 +126,13 @@ class Server:
 
                 # If the requested camera is initialised, start a stream thread
                 if camera in self.cameras:
-                    print("camera exists")
-                    stream_thread = threading.Thread(target=self.stream_handler, args=[client], daemon=True)
+                    stream_thread = threading.Thread(target=self.stream_handler, args=[client, self.cameras[camera]], daemon=True)
                     stream_thread.start()
                     # Add stream thread to clients list of camera object
                     self.cameras[camera].stream_clients.append(stream_thread)
                 # If the requested camera is not initialised or does not exist, send error response
                 else:
-                    print("camera does not exist")
+                    print("Requested camera for stream does not exist")
                     request_thread = threading.Thread(target=self.bad_request_handler, args=[client], daemon=True)
                     request_thread.start()
             # If no camera has been specified, send error response
@@ -143,13 +143,23 @@ class Server:
         
         # Send the last captured image of the camera specified in the querystring, using "cam=<camera>"
         elif url_parsed[2] == "/capture":
+            if url_parsed[4]:
             # Extract the name of the camera
-            camera = url_parsed[4]
-            var_name = re.search('cam=', camera)
-            camera = query[var_name.end():]
+                camera = url_parsed[4]
+                var_name = re.search('cam=', camera)
+                camera = camera[var_name.end():]
 
-            capture_thread = threading.Thread(target=self.capture_handler, args=[client], daemon=True)
-            capture_thread.start()
+                if camera in self.cameras:
+                    capture_thread = threading.Thread(target=self.capture_handler, args=[client, self.cameras[camera]], daemon=True)
+                    capture_thread.start()
+                else:
+                    print("Requested camera for capture does not exist")
+                    request_thread = threading.Thread(target=self.bad_request_handler, args=[client], daemon=True)
+                    request_thread.start()
+            else:
+                print("no camera specified")
+                request_thread = threading.Thread(target=self.bad_request_handler, args=[client], daemon=True)
+                request_thread.start()
         # If none of the above registered URLs works, the requested function has not yet been implemented or does not exist
         # Send back a 404 page
         else:
@@ -157,26 +167,97 @@ class Server:
             request_thread.start()
     
     # Method that sends the stream from a specific camera to the client
-    def stream_handler(self, client):
+    def stream_handler(self, client, camera):
+        res_newline = '\r\n'
+        res_ok_code = 'HTTP/1.1 200 OK\r\n'
+        res_content_jpeg = 'content-type: image/jpeg\r\n'
+        res_content_stream = 'content-type: multipart/x-mixed-replace;boundary=NEWIMAGEFROMTHESERVER\r\n'
+        res_boundary = 'NEWIMAGEFROMTHESERVER\r\n'
+        
+        response = res_ok_code + res_content_stream + res_newline
+        response = bytes(response, encoding='ascii')
+        client.send(response)
+        client.setblocking(False)
 
-        pass
+        # Buffer only for this specific client
+        internal_buffer = bytes()
+        while True:
+            if (internal_buffer != camera.image_buffer) and (camera.image_buffer != b'not an image'):
+                internal_buffer = camera.image_buffer
+                
+                res_content_length = 'content-length: {}'.format(str(len(internal_buffer))) + '\r\n'
+                response = '--' + res_boundary + res_content_jpeg + res_content_length + res_newline
+                response = bytes(response, encoding='ascii')
+                response += image_buffer
+                
+                # Break the loop if client has disconnected
+                try:
+                    client.send(response)
+                except:
+                    print("Client has disconnected")
+                    break
+                else:
+                    time.sleep(0.1)
+        client.close()
 
     # Method to send a single image to the client
-    def capture_handler(self, client):
+    def capture_handler(self, client, camera):
+        res_newline = '\r\n'
+        res_ok_code = 'HTTP/1.1 200 OK\r\n'
+        res_content_jpeg = 'content-type: image/jpeg\r\n'
 
-        pass
+        # If there is no image in the buffer, request a new image
+        if (camera.image_buffer == b'not an image') and (camera.active == False):
+            esp = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            esp.settimeout(5)
+            try:
+                esp.connect((camera.address, camera.port))
+            except:
+                print("Camera could not be reached")
+                self.bad_request_handler(client)
+            else:
+                esp.send(b'GET /capture HTTP/1.1\r\n\r\n')
+                headers = esp.recv(1024)
+                
+                esp.setblocking(False)
+                capture = bytes()
+                while True:
+                    try:
+                        chunk = esp.recv(1024)
+                        capture = capture + chunk
+                        regex_end_code = re.search(b'\xff\xd9', capture)
+                        if regex_end_code:
+                            break
+                    except:
+                        time.sleep(0.01)
+
+                regex_start_code = re.search(b'\xff\xd8\xff', capture)
+                image = capture[regex_start_code.start():regex_end_code.end()]
+                res_content_length = 'content-length: {}\r\n'.format(str(len(image)))
+
+                esp.close()
+
+                # Update the camera buffer to the new image
+                camera.image_buffer = image
+
+        # Else recycle the last image in the buffer
+        elif (camera.image_buffer != b'not an image') and (len(camera.image_buffer) > 0):
+            image = camera.image_buffer
+            res_content_length = 'content-length: {}\r\n'.format(str(len(image)))
+
+            response = bytes(res_ok_code + res_content_jpeg + res_content_length + res_newline, encoding='ascii') + image + b'\r\n'
+
+            client.setblocking(False)
+            client.send(response)
+
+        client.close()
 
     # Method to remotely shut the server down
     def shutdown_handler(self, client):
         print("Server shutting down...")
         self.running = False
         client.close()
-
-    # Method to send the status page to the client
-    def status_handler(self, client):
-
-        pass
-
+    
     # Method to send a bad request response to the client. Used when no other handler is appropriate
     def bad_request_handler(self, client):
         res_newline = '\r\n'
