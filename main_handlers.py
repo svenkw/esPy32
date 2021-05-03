@@ -291,5 +291,3 @@ def bad_request_handler(client):
     except:
         pass
     client.close()
-
-    pass

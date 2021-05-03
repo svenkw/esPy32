@@ -1,0 +1,14 @@
+{
+    "camera1" : {
+        "ip" : "192.168.2.19",
+        "stream_port" : 81,
+        "location" : "Birdhouse",
+        "description" : "Camera with IR lights, located in the birdhouse in the back garden."
+    },
+    "camera2" : {
+        "ip" : "192.168.2.20",
+        "stream_port" : 81,
+        "location" : "Bathroom",
+        "description" : "This is a joke, there is no camera in the bathroom."
+    }
+}
