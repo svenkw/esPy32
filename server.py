@@ -94,7 +94,7 @@ class Server:
                 # Start camera if necessary
                 if (len(self.cameras[camera].stream_clients) > 0) and (self.cameras[camera].active == False):
                     print(f"{camera} is now active")
-                    self.cameras[camera].request_stream()
+                    camera_thread = threading.Thread(target=self.cameras[camera].request_stream, args=[], daemon=True)
                     
                 # Stop camera if necessary
                 elif (len(self.cameras[camera].stream_clients) == 0) and (self.cameras[camera].active == True):
@@ -140,11 +140,6 @@ class Server:
         # Parse the URL
         # Returns the following (ordered): scheme (0), netloc (1), path (2), params (3), query (4), fragment (5)
         url_parsed = ul.urlparse(url)
-
-        # Send the status page
-        if url_parsed[2] == "/status":
-            status_thread = threading.Thread(target=self.status_handler, args=[client], daemon=True)
-            status_thread.start()
 
         # Shut the server down
         elif url_parsed[2] == "/shutdown/imadmin":
